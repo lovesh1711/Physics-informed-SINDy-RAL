@@ -1,0 +1,10 @@
+# MATLAB temporary / build files
+*.asv
+*.m~
+*.mex*
+slprj/
+octave-workspace
+
+# Generated results (regenerate with `main`)
+results/*
+!results/.gitkeep
