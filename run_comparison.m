@@ -78,13 +78,25 @@ for tr = 1:Ntraj
             u = min(max(u, u_min), u_max);
         end
 
-        x_k    = x;
-        xdot_k = quad_dynamics(0, x_k, u, params);   % continuous derivative
-
+        x_k   = x;
+        x_sub = zeros(n, 2);                 % states 1 and 2 sub-steps ahead
         for j = 1:steps
             x = rk4_step(x, u, params, dt);
+            if j <= 2, x_sub(:, j) = x; end
         end
         x_kp1 = x;
+
+        % derivative by finite differencing of the sampled states:
+        % second-order forward difference on the integrator grid, so both
+        % points lie under the same (held) input u_k. q and -q are the same
+        % attitude, so the later quaternions are sign-aligned with q_k first
+        % (normalize_quat keeps qw >= 0, which can flip the sign mid-stencil).
+        for j = 1:2
+            if dot(x_sub(7:10,j), x_k(7:10)) < 0
+                x_sub(7:10,j) = -x_sub(7:10,j);
+            end
+        end
+        xdot_k = (-3*x_k + 4*x_sub(:,1) - x_sub(:,2)) / (2*dt);
 
         X_list{end+1}    = x_k;
         Xp_list{end+1}   = x_kp1;
@@ -288,19 +300,22 @@ u_ref_high = mvnrnd(mu_ref, Sigma_ref, Nref_total)';
 u_ref_high(1,:) = u_ref_high(1,:) + params.m*params.g;
 u_ref_high = min(max(u_ref_high, u_min), u_max);
 
+x_ref = [xr, x_ref];                  % column j is the state at t = (j-1)*dt
 for k = 1:Nref_total
     xr = rk4_step(xr, u_ref_high(:,k), params, dt);
     xr(7:10) = normalize_quat(xr(7:10));
-    x_ref(:,k) = xr;
+    x_ref(:,k+1) = xr;
 end
 
-ref_idx    = 1:steps:Nref_total;
+% control-rate samples at t = 0, ts, ..., Nsim*ts (Nsim+1 samples), so that
+% reference sample k is at the same time as the plant state at instant k
+ref_idx    = 1:steps:Nref_total+1;
 x_ref_ctrl = x_ref(:, ref_idx);
 Nref_ctrl  = size(x_ref_ctrl, 2);
 
 u_ref_ctrl = zeros(nu, Nref_ctrl);
 for k = 1:Nref_ctrl
-    u_ref_ctrl(:,k) = u_ref_high(:, steps*(k-1)+1);
+    u_ref_ctrl(:,k) = u_ref_high(:, min(steps*(k-1)+1, Nref_total));
 end
 
 % Extract reference signals for plotting
@@ -348,9 +363,9 @@ w_ft = 0.01; w_M = 5;
 Ru_koop  = diag([w_ft, w_M, w_M, w_M]);
 Rbar_koop = kron(eye(Nh), Ru_koop);
 
-% Tighter input bounds (300N on a 4.34kg quad = 7g → unstable flips)
-u_min_koop = [10;  -10; -10; -10];
-u_max_koop = [100;  10;  10;  10];
+% same input bounds as the SINDy MPC (Section IV-A)
+u_min_koop = u_min;
+u_max_koop = u_max;
 U_lb_koop = repmat(u_min_koop, Nh, 1);
 U_ub_koop = repmat(u_max_koop, Nh, 1);
 
@@ -383,7 +398,7 @@ for k = 1:Nsim
     Bseq = cell(Nh, 1);
     for i = 1:Nh
         idx = min(ref_k + i - 1, Nref_ctrl);
-        uref_i = u_ref_high(:, steps*(idx-1)+1);
+        uref_i = u_ref_ctrl(:, idx);
 
         [Ai, Bi] = localLin(z_ref_ctrl(:,idx), uref_i);
         pref = p_ref_ctrl(:, idx);
@@ -441,7 +456,7 @@ for k = 1:Nsim
 
     % Update lifted + integral (with anti-windup clamp)
     z   = observable_phi(x_true_koop, p_lift);
-    ep  = x_true_koop(1:3) - p_ref_ctrl(:, ref_k);
+    ep  = x_true_koop(1:3) - p_ref_ctrl(:, min(ref_k+1, Nref_ctrl));   % same time t_{k+1}
     eta = eta + ep * ts;
     eta = max(min(eta, eta_max), -eta_max);   % anti-windup
     z_aug = [z; eta; 1];
@@ -468,7 +483,7 @@ for k = 1:Nsim
     Aseq = cell(Nh,1); Bseq = cell(Nh,1);
     for i = 1:Nh
         idx = min(ref_k+i-1, Nref_ctrl);
-        uref_i = u_ref_high(:, steps*(idx-1)+1);
+        uref_i = u_ref_ctrl(:, idx);
         [Ai,Bi] = localLin(z_ref_ctrl(:,idx), uref_i);
         pref = p_ref_ctrl(:, idx);
         Aseq{i} = [Ai, zeros(Nz,3), zeros(Nz,1); ts*C_p, eye(3), -ts*pref; zeros(1,Nz), zeros(1,3), 1];
@@ -513,7 +528,7 @@ for k = 1:Nsim
     x_kv = x;
     t2 = tic;                                    % lift + integral (online)
     z_kv   = observable_phi(x_kv, p_lift);
-    eta_kv = max(min(eta_kv + (x_kv(1:3)-p_ref_ctrl(:,ref_k))*ts, eta_max), -eta_max);
+    eta_kv = max(min(eta_kv + (x_kv(1:3)-p_ref_ctrl(:,min(ref_k+1,Nref_ctrl)))*ts, eta_max), -eta_max);
     zaug_kv = [z_kv; eta_kv; 1];
     t_online_k(k) = ta + toc(t2);
 end
@@ -558,7 +573,7 @@ for k = 1:Nsim
     ref_k = min(k, Nref_ctrl);
     xref0 = x_ref_ctrl(:, ref_k);
     dx0   = x_true_sindy - xref0;
-    dx0(7:10) = normalize_quat(dx0(7:10));
+    % (plain deviation dx0 = x - x_ref, as in the paper)
 
     Aseq_s = cell(Nh, 1);
     Bseq_s = cell(Nh, 1);
@@ -696,7 +711,7 @@ for k = 1:Nsim
     ton   = tic;
     ref_k = min(k, Nref_ctrl);
     dx0   = x_true_v - x_ref_ctrl(:, ref_k);
-    dx0(7:10) = normalize_quat(dx0(7:10));
+    % (plain deviation dx0 = x - x_ref, as in the paper)
     f = Mpre{k} * dx0;
     [DUopt, ~, ef] = quadprog(Hpre{k}, f, [], [], [], [], ...
                               LBpre(:,k), UBpre(:,k), [], opts);
@@ -731,7 +746,8 @@ fprintf('  offline precompute (total)     : %7.1f ms  (%.3f ms / instant)\n', ..
 %  ----------------------------------------------------------------------
 fprintf('\n--- Generating comparison plots ---\n');
 
-tvec = (0:Nsim-1) * ts;
+tvec   = (0:Nsim-1) * ts;      % input u_k is applied from t = (k-1)*ts
+tstate = (1:Nsim) * ts;        % logged state k is the state at t = k*ts
 resultsDir = fullfile(thisDir, 'results');
 
 % --- Continuous (unwrapped) per-axis rotation vector ---------------------
@@ -742,14 +758,14 @@ resultsDir = fullfile(thisDir, 'results');
 theta_ref_vec   = zeros(3, Nsim);
 theta_sindy_vec = zeros(3, Nsim);
 theta_koop_vec  = zeros(3, Nsim);
-Rref_prev   = QuatToRot(normalize_quat(x_ref_ctrl(7:10, 1)));
+Rref_prev   = QuatToRot(normalize_quat(x_ref_ctrl(7:10, 2)));
 Rsindy_prev = QuatToRot(normalize_quat(q_sindy(:, 1)));
 Rkoop_prev  = QuatToRot(normalize_quat(q_koop(:, 1)));
 theta_ref_vec(:, 1)   = vee(so3_log(Rref_prev));
 theta_sindy_vec(:, 1) = vee(so3_log(Rsindy_prev));
 theta_koop_vec(:, 1)  = vee(so3_log(Rkoop_prev));
 for k = 2:Nsim
-    R_ref_k   = QuatToRot(normalize_quat(x_ref_ctrl(7:10, k)));
+    R_ref_k   = QuatToRot(normalize_quat(x_ref_ctrl(7:10, k+1)));
     R_sindy_k = QuatToRot(normalize_quat(q_sindy(:, k)));
     R_koop_k  = QuatToRot(normalize_quat(q_koop(:, k)));
     theta_ref_vec(:, k)   = theta_ref_vec(:, k-1)   + vee(so3_log(R_ref_k   * Rref_prev.'));
@@ -778,19 +794,19 @@ left_labels  = {'p_x (m)','p_y (m)','p_z (m)', ...
 right_labels = {'\theta_x (rad)','\theta_y (rad)','\theta_z (rad)', ...
                 '\omega_x (rad/s)','\omega_y (rad/s)','\omega_z (rad/s)'};
 
-left_ref   = [p_ref_ctrl(:,1:Nsim); v_ref_ctrl(:,1:Nsim)];
+left_ref   = [p_ref_ctrl(:,2:Nsim+1); v_ref_ctrl(:,2:Nsim+1)];
 left_sindy = [p_sindy;              v_sindy];
 left_koop  = [p_koop;               v_koop];
-right_ref   = [theta_ref_vec;   omega_ref_ctrl(:,1:Nsim)];
+right_ref   = [theta_ref_vec;   omega_ref_ctrl(:,2:Nsim+1)];
 right_sindy = [theta_sindy_vec; omega_sindy];
 right_koop  = [theta_koop_vec;  omega_koop];
 
 for r = 1:6
     % Left column
     ax = nexttile(tl, (r-1)*2 + 1);
-    plot(ax, tvec, left_ref(r,:),   '--', 'Color', c_ref,   'LineWidth', lw_ref);  hold(ax,'on');
-    plot(ax, tvec, left_sindy(r,:), '-',  'Color', c_sindy, 'LineWidth', lw_data);
-    plot(ax, tvec, left_koop(r,:),  '-',  'Color', c_koop,  'LineWidth', lw_data);
+    plot(ax, tstate, left_ref(r,:),   '--', 'Color', c_ref,   'LineWidth', lw_ref);  hold(ax,'on');
+    plot(ax, tstate, left_sindy(r,:), '-',  'Color', c_sindy, 'LineWidth', lw_data);
+    plot(ax, tstate, left_koop(r,:),  '-',  'Color', c_koop,  'LineWidth', lw_data);
     ylabel(ax, left_labels{r});
     grid(ax,'on'); box(ax,'on'); set(ax,'FontSize',8);
     if r < 6, set(ax,'XTickLabel',[]); end
@@ -801,9 +817,9 @@ for r = 1:6
 
     % Right column
     ax = nexttile(tl, (r-1)*2 + 2);
-    plot(ax, tvec, right_ref(r,:),   '--', 'Color', c_ref,   'LineWidth', lw_ref);  hold(ax,'on');
-    plot(ax, tvec, right_sindy(r,:), '-',  'Color', c_sindy, 'LineWidth', lw_data);
-    plot(ax, tvec, right_koop(r,:),  '-',  'Color', c_koop,  'LineWidth', lw_data);
+    plot(ax, tstate, right_ref(r,:),   '--', 'Color', c_ref,   'LineWidth', lw_ref);  hold(ax,'on');
+    plot(ax, tstate, right_sindy(r,:), '-',  'Color', c_sindy, 'LineWidth', lw_data);
+    plot(ax, tstate, right_koop(r,:),  '-',  'Color', c_koop,  'LineWidth', lw_data);
     ylabel(ax, right_labels{r});
     grid(ax,'on'); box(ax,'on'); set(ax,'FontSize',8);
     if r < 6, set(ax,'XTickLabel',[]); end
@@ -845,15 +861,19 @@ fprintf('                   COMPARISON SUMMARY\n');
 fprintf('================================================================\n');
 
 % Tracking RMSE (MPC closed-loop)
-trk_koop_p = sqrt(mean(sum((p_koop - p_ref_ctrl(:,1:Nsim)).^2, 1)));
-trk_koop_v = sqrt(mean(sum((v_koop - v_ref_ctrl(:,1:Nsim)).^2, 1)));
-trk_koop_th = sqrt(mean(sum((theta_koop - theta_ref_ctrl(:,1:Nsim)).^2, 1)));
-trk_koop_w = sqrt(mean(sum((omega_koop - omega_ref_ctrl(:,1:Nsim)).^2, 1)));
+trk_koop_p = sqrt(mean(sum((p_koop - p_ref_ctrl(:,2:Nsim+1)).^2, 1)));
+trk_koop_v = sqrt(mean(sum((v_koop - v_ref_ctrl(:,2:Nsim+1)).^2, 1)));
+% attitude: geodesic error e_k = ||log(R_ref,k' R_k)||, the rotation angle
+% between reference and actual attitude (in [0, pi], no wrapping)
+geo_err = @(Q) arrayfun(@(k) norm(vee(so3_log( ...
+    QuatToRot(x_ref_ctrl(7:10,k+1))' * QuatToRot(Q(:,k))))), 1:Nsim);
+trk_koop_th = sqrt(mean(geo_err(q_koop).^2));
+trk_koop_w = sqrt(mean(sum((omega_koop - omega_ref_ctrl(:,2:Nsim+1)).^2, 1)));
 
-trk_sindy_p = sqrt(mean(sum((p_sindy - p_ref_ctrl(:,1:Nsim)).^2, 1)));
-trk_sindy_v = sqrt(mean(sum((v_sindy - v_ref_ctrl(:,1:Nsim)).^2, 1)));
-trk_sindy_th = sqrt(mean(sum((theta_sindy - theta_ref_ctrl(:,1:Nsim)).^2, 1)));
-trk_sindy_w = sqrt(mean(sum((omega_sindy - omega_ref_ctrl(:,1:Nsim)).^2, 1)));
+trk_sindy_p = sqrt(mean(sum((p_sindy - p_ref_ctrl(:,2:Nsim+1)).^2, 1)));
+trk_sindy_v = sqrt(mean(sum((v_sindy - v_ref_ctrl(:,2:Nsim+1)).^2, 1)));
+trk_sindy_th = sqrt(mean(geo_err(q_sindy).^2));
+trk_sindy_w = sqrt(mean(sum((omega_sindy - omega_ref_ctrl(:,2:Nsim+1)).^2, 1)));
 
 fprintf('\n--- Open-Loop Prediction nRMSE (%%) ---\n');
 fprintf('%-12s %10s %10s\n', 'State', 'Koopman', 'SINDy');
@@ -876,7 +896,8 @@ fprintf('================================================================\n');
 
 %% ======================== 10. SAVE WORKSPACE ==========================
 % Quaternion series (for continuous/unwrapped attitude plotting downstream)
-q_ref = x_ref_ctrl(7:10, 1:Nsim);
+q_ref = x_ref_ctrl(7:10, 1:Nsim+1);           % t = 0 ... Nsim*ts
+x0    = x_ref_ctrl(:, 1);                    % common initial state (hover)
 save(fullfile(resultsDir, 'comparison_results.mat'), ...
     'koop_nRMSE_p','koop_nRMSE_v','koop_nRMSE_th','koop_nRMSE_w', ...
     'sindy_nRMSE_p','sindy_nRMSE_v','sindy_nRMSE_th','sindy_nRMSE_w', ...
@@ -886,7 +907,7 @@ save(fullfile(resultsDir, 'comparison_results.mat'), ...
     'p_koop','v_koop','theta_koop','omega_koop','u_koop','q_koop', ...
     'p_sindy','v_sindy','theta_sindy','omega_sindy','u_sindy','q_sindy', ...
     'p_ref_ctrl','v_ref_ctrl','theta_ref_ctrl','omega_ref_ctrl','q_ref', ...
-    'tvec','A_koop','B_koop','Xi','params');
+    'tvec','x0','A_koop','B_koop','Xi','params');
 
 fprintf('\nResults saved to %s\n', resultsDir);
 fprintf('Simulation complete.\n');

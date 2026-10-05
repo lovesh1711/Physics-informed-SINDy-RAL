@@ -28,18 +28,16 @@ fprintf('Figure-8: %d control steps, thrust %.1f-%.1f N, max bank %.0f deg\n', .
         Nsim, min(Uref(1,:)), max(Uref(1,:)), fig8_maxbank(Xref));
 
 %% ---------- train the two Koopman models ----------
-[Xn,Xpn,Un] = gen_train(params,ts,dt,steps,mg,u_min,u_max,'hover',1);
+[Xn,Xpn,Un,Xdn] = gen_train(params,ts,dt,steps,mg,u_min,u_max,'hover',1);
 [A_kn,B_kn] = train_edmd(Xn,Xpn,Un,p_lift,n);
 bz_n = B_kn(6,1);
 [Xb,Xpb,Ub] = gen_train(params,ts,dt,steps,mg,u_min,u_max,'broad',11);
 [A_kb,B_kb] = train_edmd(Xb,Xpb,Ub,p_lift,n);
 bz_b = B_kb(6,1);
 
-%% ---------- train SINDy (exact model from hover data derivatives) ----------
-Xdot = zeros(n, size(Xn,2));
-for k = 1:size(Xn,2), Xdot(:,k) = quad_dynamics(0,Xn(:,k),Un(:,k),params); end
+%% ---------- train SINDy (hover data, finite-difference derivatives) ----------
 [Theta,~] = sindy_library(Xn,Un);
-Xi = stlsq(Theta, Xdot, 0.10, 20);
+Xi = stlsq(Theta, Xdn, 0.10, 10);           % same settings as run_comparison.m
 fprintf('beta_z : K-narrow = %+.3e (%.2f e-3),  K-broad = %+.3e (%.2f e-3)\n', ...
         bz_n,1e3*bz_n, bz_b,1e3*bz_b);
 fprintf('SINDy: nnz(Xi)=%d\n', nnz(Xi));
@@ -50,7 +48,8 @@ Xk_b = run_koopman(A_kb,B_kb,C_koop,Nz,p_lift,Xref,Uref,params,ts,dt,steps,Nh,n,
 Xs   = run_sindy(Xi,Xref,Uref,params,ts,dt,steps,Nh,n,nu,Nsim,u_min,u_max);
 
 %% ---------- metrics ----------
-rmse = @(X) sqrt(mean(sum((X(1:3,1:Nsim)-Xref(1:3,1:Nsim)).^2,1)));
+% logged state k is at t = k*ts, i.e. reference sample k+1
+rmse = @(X) sqrt(mean(sum((X(1:3,1:Nsim)-Xref(1:3,2:Nsim+1)).^2,1)));
 fprintf('\n--- position tracking RMSE (m) ---\n');
 fprintf('  K-narrow (beta_z<0): %.3f\n', rmse(Xk_n));
 fprintf('  K-broad  (beta_z>0): %.3f\n', rmse(Xk_b));
@@ -80,7 +79,7 @@ function b = fig8_maxbank(Xref)
     end
 end
 
-function [X,Xp,U] = gen_train(params,ts,dt,steps,mg,u_min,u_max,mode,seed)
+function [X,Xp,U,Xdot] = gen_train(params,ts,dt,steps,mg,u_min,u_max,mode,seed)
     RandStream.setGlobalStream(RandStream('mt19937ar','Seed',seed));
     n=13; nu=4;
     if strcmp(mode,'hover')
@@ -88,7 +87,7 @@ function [X,Xp,U] = gen_train(params,ts,dt,steps,mg,u_min,u_max,mode,seed)
     else
         Ntraj=600; T=1.0; Sig=diag([15;15;15;15]); hold_len=-1;
     end
-    Ns=round(T/ts); X=zeros(n,Ntraj*Ns); Xp=X; U=zeros(nu,Ntraj*Ns); kk=0;
+    Ns=round(T/ts); X=zeros(n,Ntraj*Ns); Xp=X; Xdot=X; U=zeros(nu,Ntraj*Ns); kk=0;
     for tr=1:Ntraj
         if strcmp(mode,'hover')
             x=[zeros(6,1);1;0;0;0;zeros(3,1)];
@@ -105,9 +104,14 @@ function [X,Xp,U] = gen_train(params,ts,dt,steps,mg,u_min,u_max,mode,seed)
             if (k==1)||(mod(k-1,hl)==0)
                 u=mvnrnd(zeros(4,1),Sig).'; u(1)=u(1)+mg; u=min(max(u,u_min),u_max);
             end
-            xk=x;
-            for j=1:steps, x=rk4_step(x,u,params,dt); x(7:10)=normalize_quat(x(7:10)); end
+            xk=x; xs=zeros(n,2);
+            for j=1:steps
+                x=rk4_step(x,u,params,dt); x(7:10)=normalize_quat(x(7:10));
+                if j<=2, xs(:,j)=x; end
+            end
             kk=kk+1; X(:,kk)=xk; Xp(:,kk)=x; U(:,kk)=u;
+            for j=1:2, if dot(xs(7:10,j),xk(7:10))<0, xs(7:10,j)=-xs(7:10,j); end, end  % align q sign
+            Xdot(:,kk)=(-3*xk+4*xs(:,1)-xs(:,2))/(2*dt);   % 2nd-order forward FD
         end
     end
 end
@@ -131,7 +135,7 @@ function Xcl = run_koopman(A_koop,B_koop,C_koop,Nz,p_lift,Xref,Uref,params,ts,dt
     Qtk=zeros(Nz,Nz); Qtk(1:13,1:13)=blkdiag(Q_pos,Q_vel,Q_q,Q_w);
     Qta=blkdiag(Qtk,S_int,0); Qbar=kron(eye(Nh),Qta);
     Ru=diag([0.01,5,5,5]); Rbar=kron(eye(Nh),Ru);
-    umn=[10;-10;-10;-10]; umx=[100;10;10;10];
+    umn=[10;-30;-30;-30]; umx=[300;30;30;30];   % same bounds as the SINDy MPC
     Ulb=repmat(umn,Nh,1); Uub=repmat(umx,Nh,1);
     opts=optimoptions('quadprog','Display','none','Algorithm','interior-point-convex');
     Nref=size(Xref,2);
@@ -170,7 +174,7 @@ function Xcl = run_koopman(A_koop,B_koop,C_koop,Nz,p_lift,Xref,Uref,params,ts,dt
         u0=min(max(U0(1:nu),umn),umx);
         for j=1:steps, x=rk4_step(x,u0,params,dt); x(7:10)=normalize_quat(x(7:10)); end
         z=observable_phi(x,p_lift);
-        eta=max(min(eta+(x(1:3)-pref(:,rk))*ts,eta_max),-eta_max);
+        eta=max(min(eta+(x(1:3)-pref(:,min(rk+1,Nref)))*ts,eta_max),-eta_max);   % same time t_{k+1}
         zaug=[z;eta;1]; Xcl(:,k)=x;
     end
 end
@@ -183,7 +187,7 @@ function Xcl = run_sindy(Xi,Xref,Uref,params,ts,dt,steps,Nh,n,nu,Nsim,u_min,u_ma
     x=[Xref(1:6,1);normalize_quat(Xref(7:10,1));Xref(11:13,1)];
     Xcl=zeros(n,Nsim);
     for k=1:Nsim
-        rk=min(k,Nref); dx0=x-Xref(:,rk); dx0(7:10)=normalize_quat(dx0(7:10));
+        rk=min(k,Nref); dx0=x-Xref(:,rk);
         Aseq=cell(Nh,1); Bseq=cell(Nh,1); DUlb=zeros(nu*Nh,1); DUub=zeros(nu*Nh,1);
         for i=1:Nh
             idx=min(rk+i-1,Nref);

@@ -12,8 +12,8 @@ function [Ac, Bc] = sindy_jacobian_fd(xr, ur, Xi)
     for i = 1:n
         dx = zeros(n, 1); dx(i) = epsx;
         xp = xr + dx;  xm = xr - dx;
-        xp(7:10) = normalize_quat(xp(7:10));
-        xm(7:10) = normalize_quat(xm(7:10));
+        xp(7:10) = xp(7:10) / norm(xp(7:10));   % unit norm, no sign flip
+        xm(7:10) = xm(7:10) / norm(xm(7:10));
         fp = sindy_rhs(xp, ur, Xi);
         fm = sindy_rhs(xm, ur, Xi);
         Ac(:, i) = (fp - fm) / (2*epsx);

@@ -20,19 +20,6 @@ function names = make_feature_names()
     names{end+1} = 'R12'; names{end+1} = 'R22'; names{end+1} = 'R32';
     names{end+1} = 'R13'; names{end+1} = 'R23'; names{end+1} = 'R33';
 
-    for j = 1:3
-        for i = 1:3
-            names{end+1} = sprintf('What%d%d', i, j);
-        end
-    end
-
-    for j = 1:3
-        for i = 1:3
-            names{end+1} = sprintf('RWhat%d%d', i, j);
-        end
-    end
-
-    names{end+1} = 'b3w1'; names{end+1} = 'b3w2'; names{end+1} = 'b3w3';
     names{end+1} = 'ft*b3w1'; names{end+1} = 'ft*b3w2'; names{end+1} = 'ft*b3w3';
 
     qnames = {'qw','qx','qy','qz'};

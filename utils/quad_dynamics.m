@@ -14,7 +14,7 @@ function x_dot = quad_dynamics(~, x, u, params)
     e3 = [0;0;1];
 
     v     = x(4:6);
-    q     = normalize_quat(x(7:10));
+    q     = x(7:10) / norm(x(7:10));   % unit norm only: no sign flip inside RK4 stages
     omega = x(11:13);
 
     ft = u(1);

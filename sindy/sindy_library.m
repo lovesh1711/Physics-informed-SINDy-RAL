@@ -1,6 +1,6 @@
 function [Theta, feature_names] = sindy_library(Xdata, Udata)
 % SINDY_LIBRARY  Physics-informed feature library for quadrotor SINDy
-%   Features: {1, p, v, q, w, u, R(:), W(:), RW(:), b3w, ft*b3w, q*w}
+%   Features: {1, p, v, q, w, u, R(:), ft*b3w, q*w, w_i*w_j}  (48 total)
 %   Input:  Xdata (13 x K) state snapshots, Udata (4 x K) input snapshots
 %   Output: Theta (Nfeat x K) feature matrix, feature_names (cell array)
 
@@ -16,16 +16,13 @@ function [Theta, feature_names] = sindy_library(Xdata, Udata)
 
         p  = x(1:3);
         v  = x(4:6);
-        q  = normalize_quat(x(7:10));
+        q  = x(7:10) / norm(x(7:10));   % unit norm only (sign-consistent with x)
         w  = x(11:13);
         ft = u(1);
 
         R_bw = QuatToRot(q);
         R_wb = R_bw';
         b3w  = R_wb * e3;
-
-        W  = hat(w);
-        RW = R_wb * W;
 
         qomega = [
             q(1)*w(1); q(1)*w(2); q(1)*w(3);
@@ -45,9 +42,6 @@ function [Theta, feature_names] = sindy_library(Xdata, Udata)
             p; v; q; w;
             u;
             R_wb(:);
-            W(:);
-            RW(:);
-            b3w;
             ft*b3w;
             qomega;
             wprod

@@ -6,22 +6,24 @@
 clc; clear; close all;
 thisDir=fileparts(mfilename('fullpath'));
 L=load(fullfile(thisDir,'results','figure8_results.mat'));
-N=L.Nsim; t=L.tvec(1:N);
+N=L.Nsim; t=L.tvec(2:N+1);   % logged state k is at t = k*ts (reference sample k+1)
 % match states.png (make_paper_figures.m): reference grey solid,
 % SINDy vermillion dashed, Koopman blue dash-dot. K-narrow keeps the states
 % Koopman blue; K-broad gets a distinct purple. Line styles matched below.
 cRef=[0.35 0.35 0.35]; cS=[0.835 0.369 0.000];
 cN=[0.000 0.447 0.698]; cB=[0.494 0.184 0.556];
 
-pe=@(X) sqrt(sum((X(1:3,1:N)-L.Xref(1:3,1:N)).^2,1));
+pe=@(X) sqrt(sum((X(1:3,1:N)-L.Xref(1:3,2:N+1)).^2,1));
+wx0=@(X) [L.Xref(:,1), X(:,1:N)];      % prepend the common initial state
 
 %% ---- Panel (a): xy trajectory, zoomed to the figure-8 ------------------
 figA=figure('Color','w','Position',[80 80 500 500]);
 axA=axes(figA); hold(axA,'on');
-h0=plot(L.Xref(2,1:N),L.Xref(1,1:N),'-', 'Color',cRef,'LineWidth',2.4);
-h1=plot(L.Xs(2,1:N), L.Xs(1,1:N), '--','Color',cS,'LineWidth',2.2);
-h2=plot(L.Xk_n(2,1:N),L.Xk_n(1,1:N),'-.','Color',cN,'LineWidth',2.0);
-h3=plot(L.Xk_b(2,1:N),L.Xk_b(1,1:N),'-.','Color',cB,'LineWidth',2.0);
+Xs0=wx0(L.Xs); Xn0=wx0(L.Xk_n); Xb0=wx0(L.Xk_b);
+h0=plot(L.Xref(2,1:N+1),L.Xref(1,1:N+1),'-', 'Color',cRef,'LineWidth',2.4);
+h1=plot(Xs0(2,:), Xs0(1,:), '--','Color',cS,'LineWidth',2.2);
+h2=plot(Xn0(2,:),Xn0(1,:),'-.','Color',cN,'LineWidth',2.0);
+h3=plot(Xb0(2,:),Xb0(1,:),'-.','Color',cB,'LineWidth',2.0);
 axis(axA,'equal'); xlim(axA,[-3 3]); ylim(axA,[-3 3]); grid(axA,'on'); box(axA,'on');
 xlabel(axA,'East  y [m]'); ylabel(axA,'North  x [m]');
 set(axA,'FontSize',12,'LineWidth',1.1,'GridAlpha',0.15);
@@ -40,7 +42,7 @@ g3=semilogy(axB,t,pe(L.Xk_b),'-.','Color',cB,'LineWidth',2.0);
 set(axB,'YScale','log');
 grid(axB,'on'); box(axB,'on');
 xlabel(axB,'time [s]'); ylabel(axB,'position error  |p - p_r|  [m]');
-ylim(axB,[1e-2 3e2]);
+ylim(axB,[1e-3 3e2]);
 set(axB,'FontSize',12,'LineWidth',1.1,'GridAlpha',0.15);
 lgB=legend(axB,[g1 g2 g3], ...
     {'SINDy','K-narrow (\beta_z<0)','K-broad (\beta_z>0)'}, ...

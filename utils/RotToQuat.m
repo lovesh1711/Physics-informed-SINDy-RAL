@@ -1,8 +1,10 @@
 function q = RotToQuat(R)
-% ROTTOQUAT  Converts a rotation matrix to a unit quaternion [qw;qx;qy;qz]
-%   Written by Daniel Mellinger
+% ROTTOQUAT  Converts a world-to-body rotation matrix to a unit quaternion
+%   [qw;qx;qy;qz]. Exact inverse of QuatToRot.m: QuatToRot(RotToQuat(R)) = R.
+%   (Adapted from D. Mellinger's RotToQuat.)
 %   Reference: http://www.euclideanspace.com/maths/geometry/rotations/conversions/matrixToQuaternion/
 
+    R  = R.';                       % world-to-body -> body-to-world
     tr = R(1,1) + R(2,2) + R(3,3);
 
     if (tr > 0)

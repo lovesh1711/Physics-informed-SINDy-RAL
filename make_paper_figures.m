@@ -24,8 +24,13 @@ thisDir    = fileparts(mfilename('fullpath'));
 resultsDir = fullfile(thisDir, 'results');
 S = load(fullfile(resultsDir, 'comparison_results.mat'));
 
-tvec = S.tvec;
+tvec = S.tvec;                     % input times: u_k applied from t=(k-1)*ts
 Nsim = numel(tvec);
+ts_  = tvec(2) - tvec(1);
+tst  = (0:Nsim) * ts_;             % state times: x(t_0) ... x(t_Nsim)
+% logged state k is at t = k*ts; prepend the common initial state x0 so
+% every state trace and the reference are drawn on the same time grid
+withx0 = @(X, rows) [S.x0(rows), X];
 
 % ---------- continuous (unwrapped) attitude rotation vectors --------------
 %   The principal log vee(log R) wraps whenever the rotation angle crosses
@@ -34,9 +39,9 @@ Nsim = numel(tvec);
 %   jump-free by construction. Recomputed from the saved quaternion series.
 addpath(fullfile(thisDir, 'utils'), '-begin');
 
-theta_ref   = rotvec_unwrap(S.q_ref);
-theta_sindy = rotvec_unwrap(S.q_sindy);
-theta_koop  = rotvec_unwrap(S.q_koop);
+theta_ref   = rotvec_unwrap(S.q_ref(:, 1:Nsim+1));
+theta_sindy = rotvec_unwrap(withx0(S.q_sindy, 7:10));
+theta_koop  = rotvec_unwrap(withx0(S.q_koop,  7:10));
 
 % ---------- style ---------------------------------------------------------
 %  Three-color publication palette (Okabe-Ito-inspired, colour-blind safe):
@@ -63,28 +68,28 @@ inLabel = @(ax, str) text(ax, 0.05, 0.78, str, ...
 
 %% ===================== FIGURE 1: STATES (6 x 2) =========================
 fig1 = figure('Name','States (paper style)','Color',[1 1 1], ...
-              'Units','centimeters','Position',[2 2 9 20]);
+              'Units','centimeters','Position',[2 2 14.3 21.2]);
 tl1 = tiledlayout(fig1, 6, 2, ...
                   'TileSpacing','compact','Padding','compact');
 
 % Left column data  : p_x, p_y, p_z, v_x, v_y, v_z
-left_ref   = [S.p_ref_ctrl(:,1:Nsim); S.v_ref_ctrl(:,1:Nsim)];
-left_sindy = [S.p_sindy;              S.v_sindy];
-left_koop  = [S.p_koop;               S.v_koop];
+left_ref   = [S.p_ref_ctrl(:,1:Nsim+1); S.v_ref_ctrl(:,1:Nsim+1)];
+left_sindy = [withx0(S.p_sindy,1:3);    withx0(S.v_sindy,4:6)];
+left_koop  = [withx0(S.p_koop,1:3);     withx0(S.v_koop,4:6)];
 left_lbl   = {'x','y','z','v_x','v_y','v_z'};
 
 % Right column data : theta_x, theta_y, theta_z, omega_x, omega_y, omega_z
-right_ref   = [theta_ref;   S.omega_ref_ctrl(:,1:Nsim)];
-right_sindy = [theta_sindy; S.omega_sindy];
-right_koop  = [theta_koop;  S.omega_koop];
+right_ref   = [theta_ref;   S.omega_ref_ctrl(:,1:Nsim+1)];
+right_sindy = [theta_sindy; withx0(S.omega_sindy,11:13)];
+right_koop  = [theta_koop;  withx0(S.omega_koop,11:13)];
 right_lbl   = {'\theta_x','\theta_y','\theta_z','\omega_x','\omega_y','\omega_z'};
 
 for r = 1:6
     % --- Left column tile ---
     ax = nexttile(tl1, (r-1)*2 + 1);
-    plot(ax, tvec, left_ref(r,:),   '-',   'Color', c_ref,   'LineWidth', lw); hold(ax,'on');
-    plot(ax, tvec, left_sindy(r,:), '--',  'Color', c_sindy, 'LineWidth', lw);
-    plot(ax, tvec, left_koop(r,:),  '-.',  'Color', c_koop,  'LineWidth', lw);
+    plot(ax, tst, left_ref(r,:),   '-',   'Color', c_ref,   'LineWidth', lw); hold(ax,'on');
+    plot(ax, tst, left_sindy(r,:), '--',  'Color', c_sindy, 'LineWidth', lw);
+    plot(ax, tst, left_koop(r,:),  '-.',  'Color', c_koop,  'LineWidth', lw);
     grid(ax,'on'); box(ax,'on');
     set(ax,'FontSize',fs_tick,'LineWidth',lw_axis,'FontWeight','bold');
     if r < 6
@@ -95,16 +100,16 @@ for r = 1:6
     inLabel(ax, left_lbl{r});
     if r == 1
         lg = legend(ax, {'Reference','SINDy','Koopman'}, ...
-                    'Location','northwest','FontSize',fs_leg, ...
+                    'Location','southwest','FontSize',fs_leg, ...
                     'Box','on');
         lg.ItemTokenSize = [14 8];
     end
 
     % --- Right column tile ---
     ax = nexttile(tl1, (r-1)*2 + 2);
-    plot(ax, tvec, right_ref(r,:),   '-',   'Color', c_ref,   'LineWidth', lw); hold(ax,'on');
-    plot(ax, tvec, right_sindy(r,:), '--',  'Color', c_sindy, 'LineWidth', lw);
-    plot(ax, tvec, right_koop(r,:),  '-.',  'Color', c_koop,  'LineWidth', lw);
+    plot(ax, tst, right_ref(r,:),   '-',   'Color', c_ref,   'LineWidth', lw); hold(ax,'on');
+    plot(ax, tst, right_sindy(r,:), '--',  'Color', c_sindy, 'LineWidth', lw);
+    plot(ax, tst, right_koop(r,:),  '-.',  'Color', c_koop,  'LineWidth', lw);
     grid(ax,'on'); box(ax,'on');
     set(ax,'FontSize',fs_tick,'LineWidth',lw_axis,'FontWeight','bold');
     if r < 6
@@ -120,7 +125,7 @@ exportgraphics(fig1, fullfile(resultsDir,'states.png'), ...
 
 %% ===================== FIGURE 2: INPUTS (2 x 2) =========================
 fig2 = figure('Name','Inputs (paper style)','Color',[1 1 1], ...
-              'Units','centimeters','Position',[2 2 9 7.5]);
+              'Units','centimeters','Position',[2 2 20.3 14.6]);
 tl2 = tiledlayout(fig2, 2, 2, ...
                   'TileSpacing','compact','Padding','compact');
 
@@ -147,7 +152,7 @@ for r = 1:2
         inLabel(ax, in_lbl{r,c});
         if r == 1 && c == 1
             lg = legend(ax, {'SINDy','Koopman'}, ...
-                        'Location','northwest','FontSize',fs_leg, ...
+                        'Location','southeast','FontSize',fs_leg, ...
                         'Box','on');
             lg.ItemTokenSize = [14 8];
         end
