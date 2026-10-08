@@ -162,13 +162,15 @@ function Xcl = run_koopman(A_koop,B_koop,C_koop,Nz,p_lift,Xref,Uref,params,ts,dt
                 Bqp((i-1)*Nz_aug+1:i*Nz_aug,(j-1)*nu+1:j*nu)=Apr*Bseq{j};
             end
         end
-        Y=zeros(Nz_aug*Nh,1);
+        Y=zeros(Nz_aug*Nh,1); Ur=zeros(nu*Nh,1);
         for i=1:Nh
             idx=min(rk+i-1,Nref); b=(i-1)*Nz_aug;
             Y(b+1:b+Nz)=zref(:,idx); Y(b+Nz+4)=1;
+            Ur((i-1)*nu+1:i*nu)=Uref(:,idx);
         end
+        % input cost on the deviation u - u_ref, as in the tracking objective
         H=2*(Bqp'*Qbar*Bqp+Rbar); H=0.5*(H+H')+1e-8*eye(size(H));
-        f=2*(Bqp'*Qbar*(Aqp*zaug-Y));
+        f=2*(Bqp'*Qbar*(Aqp*zaug-Y))-2*Rbar*Ur;
         [U0,~,ef]=quadprog(H,f,[],[],[],[],Ulb,Uub,[],opts);
         if ef<=0||any(isnan(U0)), U0=min(max(-(H\f),Ulb),Uub); end
         u0=min(max(U0(1:nu),umn),umx);

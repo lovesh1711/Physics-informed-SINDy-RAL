@@ -423,16 +423,19 @@ for k = 1:Nsim
     end
 
     Y = zeros(Nz_aug*Nh, 1);
+    Uref_stack = zeros(nu*Nh, 1);
     for i = 1:Nh
         idx  = min(ref_k + i - 1, Nref_ctrl);
         base = (i-1)*Nz_aug;
         Y(base+1:base+Nz)      = z_ref_ctrl(:, idx);
         Y(base+Nz+1:base+Nz+3) = zeros(3,1);
         Y(base+Nz+4)           = 1;
+        Uref_stack((i-1)*nu+1:i*nu) = u_ref_ctrl(:, idx);
     end
 
+    % input cost on the deviation u - u_ref, as in the tracking objective
     H = 2*(Bqp'*Qbar_koop*Bqp + Rbar_koop);
-    f = 2*(Bqp'*Qbar_koop*(Aqp*z_aug - Y));
+    f = 2*(Bqp'*Qbar_koop*(Aqp*z_aug - Y)) - 2*Rbar_koop*Uref_stack;
     H = 0.5*(H + H') + 1e-8*eye(size(H));
 
     [Uopt, ~, ef] = quadprog(H, f, [], [], [], [], U_lb_koop, U_ub_koop, [], opts);
@@ -498,15 +501,17 @@ for k = 1:Nsim
             Bqp((i-1)*Nz_aug+1:i*Nz_aug,(j-1)*nu+1:j*nu) = Aprod*Bseq{j};
         end
     end
-    Yk = zeros(Nz_aug*Nh,1);
+    Yk = zeros(Nz_aug*Nh,1); Urk = zeros(nu*Nh,1);
     for i = 1:Nh
         idx = min(ref_k+i-1, Nref_ctrl); base = (i-1)*Nz_aug;
         Yk(base+1:base+Nz) = z_ref_ctrl(:,idx);
         Yk(base+Nz+4)      = 1;
+        Urk((i-1)*nu+1:i*nu) = u_ref_ctrl(:,idx);
     end
     Hk = 2*(Bqp'*Qbar_koop*Bqp + Rbar_koop);
     Hk = 0.5*(Hk+Hk') + 1e-8*eye(size(Hk));
-    Hk_pre{k}=Hk; Mk_pre{k}=2*(Bqp'*Qbar_koop*Aqp); fck_pre{k}=2*(Bqp'*Qbar_koop*Yk);
+    Hk_pre{k}=Hk; Mk_pre{k}=2*(Bqp'*Qbar_koop*Aqp);
+    fck_pre{k}=2*(Bqp'*Qbar_koop*Yk) + 2*Rbar_koop*Urk;
 end
 t_precomp_k = toc(t0k);
 
