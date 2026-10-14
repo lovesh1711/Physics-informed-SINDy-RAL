@@ -17,9 +17,10 @@ withx0 = @(X, rows) [S.x0(rows), X];
 
 addpath(fullfile(thisDir, 'utils'), '-begin');
 
-theta_ref   = rotvec_unwrap(S.q_ref(:, 1:Nsim+1));
-theta_sindy = rotvec_unwrap(withx0(S.q_sindy, 7:10));
-theta_koop  = rotvec_unwrap(withx0(S.q_koop,  7:10));
+% attitude as ZYX Euler angles (deg), roll and yaw unwrapped in time
+eul_ref   = rad2deg(quat_to_euler_zyx(S.q_ref(:, 1:Nsim+1)));
+eul_sindy = rad2deg(quat_to_euler_zyx(withx0(S.q_sindy, 7:10)));
+eul_koop  = rad2deg(quat_to_euler_zyx(withx0(S.q_koop,  7:10)));
 
 
 c_ref   = [0.35  0.35  0.35];
@@ -52,11 +53,11 @@ left_sindy = [withx0(S.p_sindy,1:3);    withx0(S.v_sindy,4:6)];
 left_koop  = [withx0(S.p_koop,1:3);     withx0(S.v_koop,4:6)];
 left_lbl   = {'x','y','z','v_x','v_y','v_z'};
 
-% Right column data : theta_x, theta_y, theta_z, omega_x, omega_y, omega_z
-right_ref   = [theta_ref;   S.omega_ref_ctrl(:,1:Nsim+1)];
-right_sindy = [theta_sindy; withx0(S.omega_sindy,11:13)];
-right_koop  = [theta_koop;  withx0(S.omega_koop,11:13)];
-right_lbl   = {'\theta_x','\theta_y','\theta_z','\omega_x','\omega_y','\omega_z'};
+% Right column data : roll, pitch, yaw, omega_x, omega_y, omega_z
+right_ref   = [eul_ref;   S.omega_ref_ctrl(:,1:Nsim+1)];
+right_sindy = [eul_sindy; withx0(S.omega_sindy,11:13)];
+right_koop  = [eul_koop;  withx0(S.omega_koop,11:13)];
+right_lbl   = {'\phi','\theta','\psi','\omega_x','\omega_y','\omega_z'};
 
 for r = 1:6
     % --- Left column tile ---
@@ -139,22 +140,3 @@ exportgraphics(fig2, fullfile(resultsDir,'control_inputs.png'), ...
 fprintf('\nPaper figures written to:\n  %s\n  %s\n', ...
         fullfile(resultsDir,'states.png'), ...
         fullfile(resultsDir,'control_inputs.png'));
-
-
-%% ====================== LOCAL FUNCTIONS ==================================
-function th = rotvec_unwrap(Q)
-%ROTVEC_UNWRAP  Continuous rotation-vector trace from a quaternion series.
-%   Q  : 4 x N quaternion time series (each column [qw;qx;qy;qz]).
-%   th : 3 x N continuous axis-angle vector, accumulated from the small
-%        relative-rotation logs between consecutive samples (jump-free).
-    N  = size(Q, 2);
-    th = zeros(3, N);
-    Rprev    = QuatToRot(normalize_quat(Q(:,1)));
-    th(:,1)  = vee(so3_log(Rprev));
-    for k = 2:N
-        Rk      = QuatToRot(normalize_quat(Q(:,k)));
-        dR      = Rk * Rprev.';                 % relative rotation, small
-        th(:,k) = th(:,k-1) + vee(so3_log(dR)); % accumulate the increment
-        Rprev   = Rk;
-    end
-end

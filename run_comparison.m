@@ -723,26 +723,10 @@ tvec   = (0:Nsim-1) * ts;      % input u_k is applied from t = (k-1)*ts
 tstate = (1:Nsim) * ts;        % logged state k is the state at t = k*ts
 resultsDir = fullfile(thisDir, 'results');
 
-% --- Continuous (unwrapped) per-axis rotation vector ---------------------
-
-theta_ref_vec   = zeros(3, Nsim);
-theta_sindy_vec = zeros(3, Nsim);
-theta_koop_vec  = zeros(3, Nsim);
-Rref_prev   = QuatToRot(normalize_quat(x_ref_ctrl(7:10, 2)));
-Rsindy_prev = QuatToRot(normalize_quat(q_sindy(:, 1)));
-Rkoop_prev  = QuatToRot(normalize_quat(q_koop(:, 1)));
-theta_ref_vec(:, 1)   = vee(so3_log(Rref_prev));
-theta_sindy_vec(:, 1) = vee(so3_log(Rsindy_prev));
-theta_koop_vec(:, 1)  = vee(so3_log(Rkoop_prev));
-for k = 2:Nsim
-    R_ref_k   = QuatToRot(normalize_quat(x_ref_ctrl(7:10, k+1)));
-    R_sindy_k = QuatToRot(normalize_quat(q_sindy(:, k)));
-    R_koop_k  = QuatToRot(normalize_quat(q_koop(:, k)));
-    theta_ref_vec(:, k)   = theta_ref_vec(:, k-1)   + vee(so3_log(R_ref_k   * Rref_prev.'));
-    theta_sindy_vec(:, k) = theta_sindy_vec(:, k-1) + vee(so3_log(R_sindy_k * Rsindy_prev.'));
-    theta_koop_vec(:, k)  = theta_koop_vec(:, k-1)  + vee(so3_log(R_koop_k  * Rkoop_prev.'));
-    Rref_prev = R_ref_k;  Rsindy_prev = R_sindy_k;  Rkoop_prev = R_koop_k;
-end
+% --- Attitude as ZYX Euler angles (deg), roll and yaw unwrapped in time --
+eul_ref_vec   = rad2deg(quat_to_euler_zyx(x_ref_ctrl(7:10, 2:Nsim+1)));
+eul_sindy_vec = rad2deg(quat_to_euler_zyx(q_sindy));
+eul_koop_vec  = rad2deg(quat_to_euler_zyx(q_koop));
 
 % Color / style conventions
 c_ref   = [0 0 0];                  % black, dashed
@@ -760,15 +744,15 @@ tl = tiledlayout(fig_states, 6, 2, ...
 
 left_labels  = {'p_x (m)','p_y (m)','p_z (m)', ...
                 'v_x (m/s)','v_y (m/s)','v_z (m/s)'};
-right_labels = {'\theta_x (rad)','\theta_y (rad)','\theta_z (rad)', ...
+right_labels = {'\phi (deg)','\theta (deg)','\psi (deg)', ...
                 '\omega_x (rad/s)','\omega_y (rad/s)','\omega_z (rad/s)'};
 
 left_ref   = [p_ref_ctrl(:,2:Nsim+1); v_ref_ctrl(:,2:Nsim+1)];
 left_sindy = [p_sindy;              v_sindy];
 left_koop  = [p_koop;               v_koop];
-right_ref   = [theta_ref_vec;   omega_ref_ctrl(:,2:Nsim+1)];
-right_sindy = [theta_sindy_vec; omega_sindy];
-right_koop  = [theta_koop_vec;  omega_koop];
+right_ref   = [eul_ref_vec;   omega_ref_ctrl(:,2:Nsim+1)];
+right_sindy = [eul_sindy_vec; omega_sindy];
+right_koop  = [eul_koop_vec;  omega_koop];
 
 for r = 1:6
     % Left column
