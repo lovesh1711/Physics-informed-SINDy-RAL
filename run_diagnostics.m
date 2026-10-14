@@ -1,28 +1,6 @@
 %% ========================================================================
 %  run_diagnostics.m  --  Tables I and II of the paper (Section III-E)
-%  ------------------------------------------------------------------------
-%  Generates the four training datasets D1-D4 and fits EDMD models to test
-%  the predictions of Section III:
-%    Table I  : predicted vs fitted beta_z = B*(v_z, f_t) for each
-%               dataset / dictionary pair (eq. betaz)
-%    Table II : one-step velocity error on D4 for three dictionaries of
-%               increasing size, against the irreducible floor (Cor. 1)
-%
-%  Datasets (thrust = mg + zero-mean Gaussian perturbation in all four):
-%    D1  near hover, held     : 100 x 0.5 s from hover, Sigma = 10 I,
-%                               each input held 5 sample periods
-%    D2  broad, held          : 600 x 1 s, tilt up to 45 deg, Sigma = 15 I,
-%                               inputs held 3 or 7 sample periods
-%    D3  near hover, i.i.d.   : 100 x 0.5 s from hover,
-%                               Sigma = diag(25,1,1,1), new input every step
-%    D4  broad, i.i.d.        : 600 x 1 s, tilt up to 90 deg,
-%                               Sigma = diag(25,40,40,40), new input every step
-%
-%  Dictionaries: basic (rigid-body lifting, Nz = 40), enriched (basic + R(:),
-%  Nz = 49), and '+const' (one constant observable appended).
-%
-%  Output: printed tables, results/diagnostics_results.mat
-% ========================================================================
+
 clc; clear; close all;
 
 thisDir = fileparts(mfilename('fullpath'));

@@ -1,13 +1,6 @@
 %% ========================================================================
 %  run_figure8.m
-%  Closed-loop figure-8 tracking with THREE controllers, to demonstrate that
-%  the beta_z diagnostic predicts the Koopman failure MODE:
-%    K-narrow : Koopman trained on hover data  -> beta_z < 0 (correct sign,
-%               frozen-upright direction)
-%    K-broad  : Koopman trained on broad data  -> beta_z > 0 (inverted sign)
-%    SINDy    : physics-informed state-space model (the cure)
-%  Reference: differentially-flat figure-8 (gen_figure8_ref.m).
-% ========================================================================
+
 clc; clear; close all;
 thisDir = fileparts(mfilename('fullpath'));
 addpath(fullfile(thisDir,'utils'),   '-begin');

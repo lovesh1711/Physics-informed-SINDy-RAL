@@ -1,20 +1,4 @@
 %% ========================================================================
-%  run_comparison.m  —  Koopman-EDMD vs SINDy-C for Quadrotor MPC
-%  ========================================================================
-%  Self-contained comparison script for the paper.
-%  Run section-by-section (Ctrl+Enter in MATLAB) or all at once.
-%
-%  Sections:
-%    1. Setup (paths, params, seeds)
-%    2. Shared training data generation
-%    3. Koopman EDMD training + open-loop validation
-%    4. SINDy-C training + open-loop validation
-%    5. Reference trajectory generation
-%    6. Koopman TV-MPC (with integral action)
-%    7. SINDy LTV-MPC
-%    8. Comparison plots + metrics
-%    9. Save results
-%  ========================================================================
 
 clc; clear; close all;
 
@@ -86,11 +70,7 @@ for tr = 1:Ntraj
         end
         x_kp1 = x;
 
-        % derivative by finite differencing of the sampled states:
-        % second-order forward difference on the integrator grid, so both
-        % points lie under the same (held) input u_k. q and -q are the same
-        % attitude, so the later quaternions are sign-aligned with q_k first
-        % (normalize_quat keeps qw >= 0, which can flip the sign mid-stencil).
+       
         for j = 1:2
             if dot(x_sub(7:10,j), x_k(7:10)) < 0
                 x_sub(7:10,j) = -x_sub(7:10,j);
@@ -475,9 +455,7 @@ end
 fprintf('Koopman MPC: mean solve time = %.4f ms\n', 1000*mean(t_koop_mpc));
 
 %% ====== 6b. Koopman precomputation timing (online-only) ===============
-% Koopman is a linear predictor and linearises about the reference, so its
-% per-instant matrices are precomputable, exactly as for SINDy. Online work
-% is: lift the measured state, one matvec f = M*z_aug - f_c, and the QP.
+
 fprintf('\n--- Koopman timing: precomputation analysis ---\n');
 t0k = tic;
 Hk_pre = cell(Nsim,1); Mk_pre = cell(Nsim,1); fck_pre = cell(Nsim,1);
@@ -659,11 +637,7 @@ end
 fprintf('SINDy MPC: mean solve time = %.4f ms\n', 1000*mean(t_sindy_mpc));
 
 %% =============== 7b. Precomputation timing analysis ===================
-% The LTV-MPC linearises about the REFERENCE (x_ref, u_ref), which is known
-% ahead of time. Hence every per-instant matrix -- Ad,Bd, the condensed
-% S_x,S_u, the Hessian H, the input bounds, and M = 2 S_u' Qbar S_x -- is
-% independent of the state measurement and can be built offline. The only
-% online work is one matvec f = M*dx0 and the box-constrained QP.
+
 fprintf('\n--- SINDy timing: precomputation analysis ---\n');
 
 % (a) offline: discrete Jacobians once at each reference point
@@ -742,13 +716,7 @@ fprintf('  offline precompute (total)     : %7.1f ms  (%.3f ms / instant)\n', ..
         1000*t_precomp, 1000*t_precomp/Nsim);
 
 %% ======================== 8. COMPARISON PLOTS =========================
-%  Two figures total (Koopman vs SINDy, both against the reference):
-%    fig_states : 6 x 2 grid
-%        Left  col : p_x, p_y, p_z, v_x, v_y, v_z
-%        Right col : theta_x, theta_y, theta_z, omega_x, omega_y, omega_z
-%        where theta = vee(log(R)) is the SO(3) log-map rotation vector.
-%    fig_inputs : 4 x 1 stack (f_t, M_1, M_2, M_3)
-%  ----------------------------------------------------------------------
+
 fprintf('\n--- Generating comparison plots ---\n');
 
 tvec   = (0:Nsim-1) * ts;      % input u_k is applied from t = (k-1)*ts
@@ -756,10 +724,7 @@ tstate = (1:Nsim) * ts;        % logged state k is the state at t = k*ts
 resultsDir = fullfile(thisDir, 'results');
 
 % --- Continuous (unwrapped) per-axis rotation vector ---------------------
-%   The principal log vee(log R) wraps by 2*pi*n whenever the rotation angle
-%   crosses pi. We instead accumulate the small relative-rotation logs
-%   between consecutive samples, giving a jump-free axis-angle trace that
-%   can be plotted component-by-component like p and v.
+
 theta_ref_vec   = zeros(3, Nsim);
 theta_sindy_vec = zeros(3, Nsim);
 theta_koop_vec  = zeros(3, Nsim);
@@ -787,8 +752,7 @@ lw_ref  = 1.2;
 lw_data = 1.4;
 
 % --- Figure 1: States grid (6 rows x 2 cols = 12 panels) -----------------
-%   Left column (top->bot) : p_x p_y p_z v_x v_y v_z
-%   Right column (top->bot): theta_x theta_y theta_z omega_x omega_y omega_z
+
 fig_states = figure('Name','State Tracking Grid','Color',[1 1 1], ...
                     'Units','centimeters','Position',[2 2 9 18]);
 tl = tiledlayout(fig_states, 6, 2, ...

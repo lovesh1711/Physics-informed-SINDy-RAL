@@ -1,15 +1,10 @@
 %% make_figure8_plots.m --- figure-8 figures from figure8_results.mat
-% Emits TWO separate panels (each with its own top legend) so they can be
-% dropped into LaTeX as subfigures:
-%   results/figure8_traj.png  -- trajectory in the North-East plane
-%   results/figure8_err.png   -- position error vs time (log)
+
 clc; clear; close all;
 thisDir=fileparts(mfilename('fullpath'));
 L=load(fullfile(thisDir,'results','figure8_results.mat'));
 N=L.Nsim; t=L.tvec(2:N+1);   % logged state k is at t = k*ts (reference sample k+1)
-% match states.png (make_paper_figures.m): reference grey solid,
-% SINDy vermillion dashed, Koopman blue dash-dot. K-narrow keeps the states
-% Koopman blue; K-broad gets a distinct purple. Line styles matched below.
+
 cRef=[0.35 0.35 0.35]; cS=[0.835 0.369 0.000];
 cN=[0.000 0.447 0.698]; cB=[0.494 0.184 0.556];
 

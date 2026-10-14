@@ -1,21 +1,4 @@
 %% ========================================================================
-%  make_paper_figures.m
-%  ------------------------------------------------------------------------
-%  Renders the two figures used in the RA-L manuscript in the visual style
-%  of the SE(3) Koopman-MPC paper (Narayanan et al., 2023):
-%      * axis labels placed INSIDE each subplot to save space
-%      * compact tile spacing
-%      * tick labels visible on every panel
-%      * a single legend in the top-left tile only
-%
-%  Run order:
-%      >> run_comparison        % generates results/comparison_results.mat
-%      >> make_paper_figures    % re-renders the two PNGs in paper style
-%
-%  Output:
-%      results/states.png          (6 x 2  : states tracking)
-%      results/control_inputs.png  (2 x 2  : f_t, M_1, M_2, M_3)
-%  ========================================================================
 
 clc; clear; close all;
 
@@ -28,26 +11,17 @@ tvec = S.tvec;                     % input times: u_k applied from t=(k-1)*ts
 Nsim = numel(tvec);
 ts_  = tvec(2) - tvec(1);
 tst  = (0:Nsim) * ts_;             % state times: x(t_0) ... x(t_Nsim)
-% logged state k is at t = k*ts; prepend the common initial state x0 so
-% every state trace and the reference are drawn on the same time grid
+
 withx0 = @(X, rows) [S.x0(rows), X];
 
-% ---------- continuous (unwrapped) attitude rotation vectors --------------
-%   The principal log vee(log R) wraps whenever the rotation angle crosses
-%   pi, producing 2*pi*n jumps in the per-axis traces. We instead accumulate
-%   the small relative-rotation logs between consecutive samples, which is
-%   jump-free by construction. Recomputed from the saved quaternion series.
+
 addpath(fullfile(thisDir, 'utils'), '-begin');
 
 theta_ref   = rotvec_unwrap(S.q_ref(:, 1:Nsim+1));
 theta_sindy = rotvec_unwrap(withx0(S.q_sindy, 7:10));
 theta_koop  = rotvec_unwrap(withx0(S.q_koop,  7:10));
 
-% ---------- style ---------------------------------------------------------
-%  Three-color publication palette (Okabe-Ito-inspired, colour-blind safe):
-%    reference: dark grey   -- sits visually 'behind' the data
-%    SINDy    : vermillion  -- our proposed method (dashed)
-%    Koopman  : deep blue   -- baseline (dash-dot)
+
 c_ref   = [0.35  0.35  0.35];
 c_sindy = [0.835 0.369 0.000];
 c_koop  = [0.000 0.447 0.698];

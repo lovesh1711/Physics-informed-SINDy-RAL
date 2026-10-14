@@ -1,19 +1,4 @@
 %% ========================================================================
-%  run_bilinear_ablation.m  --  Table IV of the paper (Section IV-E)
-%  ------------------------------------------------------------------------
-%  Adds the bilinear thrust atom f_t * R(q)' * e3 to the EDMD input and
-%  compares open-loop prediction accuracy against plain EDMD:
-%
-%      (1) EDMD            : u     = [f_t; M_1; M_2; M_3]          (4-dim)
-%      (2) EDMD + atom     : u_aug = [u; f_t * R(q)' e3]            (7-dim)
-%
-%  Both use the basic rigid-body dictionary (Nz = 40) and are trained on
-%  the broad-attitude dataset D2 (same recipe and seed as run_diagnostics.m)
-%  and validated on a separate broad-attitude set (seed 12, 50 x 0.5 s).
-%  For a like-for-like reference, a SINDy model is trained on the same D2
-%  data and evaluated on the same validation set (SINDy column of Table IV).
-%  Also prints the fitted gain of the bilinear channel against -Ts/m.
-%  ========================================================================
 
 clc; clear; close all;
 
@@ -40,9 +25,7 @@ n     = 13;
 e3    = [0;0;1];
 
 % ---------- training data: broad-attitude regime (D2 of Section III-E) ----
-%   600 rollouts of 1 s from randomly tilted attitudes (tilt up to pi/4),
-%   inputs ~ N(0, 15 I) + mg on thrust, held 3 or 7 sample periods
-%   (alternating), seed 11 -- identical to D2 and to K-broad (run_figure8.m).
+
 Sigma_u = diag([15; 15; 15; 15]);
 [X_list, Xp_list, U_list, Xdot_all] = gen_broad(sTrain, 600, 1.0, Sigma_u, params, ts, dt, steps, u_min, u_max);
 X    = X_list;
