@@ -10,6 +10,8 @@
 %  Both use the basic rigid-body dictionary (Nz = 40) and are trained on
 %  the broad-attitude dataset D2 (same recipe and seed as run_diagnostics.m)
 %  and validated on a separate broad-attitude set (seed 12, 50 x 0.5 s).
+%  For a like-for-like reference, a SINDy model is trained on the same D2
+%  data and evaluated on the same validation set (SINDy column of Table IV).
 %  Also prints the fitted gain of the bilinear channel against -Ts/m.
 %  ========================================================================
 
@@ -19,6 +21,7 @@ clc; clear; close all;
 thisDir = fileparts(mfilename('fullpath'));
 addpath(fullfile(thisDir, 'utils'),   '-begin');
 addpath(fullfile(thisDir, 'koopman'), '-begin');
+addpath(fullfile(thisDir, 'sindy'),   '-begin');
 
 sTrain = RandStream('mt19937ar','Seed',11);   % D2 seed
 sVal   = RandStream('mt19937ar','Seed',12);   % separate validation seed
@@ -41,7 +44,7 @@ e3    = [0;0;1];
 %   inputs ~ N(0, 15 I) + mg on thrust, held 3 or 7 sample periods
 %   (alternating), seed 11 -- identical to D2 and to K-broad (run_figure8.m).
 Sigma_u = diag([15; 15; 15; 15]);
-[X_list, Xp_list, U_list] = gen_broad(sTrain, 600, 1.0, Sigma_u, params, ts, dt, steps, u_min, u_max);
+[X_list, Xp_list, U_list, Xdot_all] = gen_broad(sTrain, 600, 1.0, Sigma_u, params, ts, dt, steps, u_min, u_max);
 X    = X_list;
 Xp   = Xp_list;
 Uall = U_list;
@@ -88,6 +91,11 @@ G_aug    = Zp * ZUa' / (ZUa * ZUa' + lambda_edmd * eye(size(ZUa,1)));
 A_aug    = G_aug(:, 1:Nz);
 B_aug    = G_aug(:, Nz+1:end);
 
+% (3) SINDy reference, trained on the same D2 data (same library and
+%     threshold as run_comparison.m), so all three models share training
+%     and validation sets
+Xi_D2 = stlsq(sindy_library(X, Uall), Xdot_all, 0.10, 10);
+
 fprintf('Baseline EDMD : A %dx%d, B %dx%d\n',  size(A_base,1),size(A_base,2),size(B_base,1),size(B_base,2));
 fprintf('Augmented EDMD: A %dx%d, B %dx%d  (input dim = %d)\n', ...
         size(A_aug,1),size(A_aug,2),size(B_aug,1),size(B_aug,2), size(B_aug,2));
@@ -103,11 +111,13 @@ num_p_b = 0; den_p_b = 0;  num_v_b = 0; den_v_b = 0;
 num_th_b = 0; den_th_b = 0; num_w_b = 0; den_w_b = 0;
 num_p_a = 0; den_p_a = 0;  num_v_a = 0; den_v_a = 0;
 num_th_a = 0; den_th_a = 0; num_w_a = 0; den_w_a = 0;
+num_p_s = 0; num_v_s = 0;
 
 for tr = 1:Nval_traj
     x_true = broad_ic();                       % same broad initial conditions
     z_b = observable_phi(x_true, p_lift);
     z_a = observable_phi(x_true, p_lift);
+    x_s = x_true;                              % SINDy prediction
     u   = [params.m*params.g; 0; 0; 0];
     if mod(tr,2)==0, Nu_hold = 3; else, Nu_hold = 7; end
 
@@ -133,6 +143,11 @@ for tr = 1:Nval_traj
         u_aug = [u; u(1) * (R_a' * e3)];
         z_a = A_aug * z_a + B_aug * u_aug;
         x_a = C_state * z_a;
+
+        % --- SINDy next state (deterministic, draws no random numbers)
+        x_s = rk4_step_sindy(x_s, u, Xi_D2, dt, steps);
+        num_p_s = num_p_s + sum((x_s(1:3) - x_true(1:3)).^2);
+        num_v_s = num_v_s + sum((x_s(4:6) - x_true(4:6)).^2);
 
         % --- Accumulate squared errors per block (1-indexed: p, v, th, w)
         % position
@@ -179,6 +194,8 @@ fprintf('%-14s %11.2f%% %11.2f%% %+11.2f%%\n', ...
 fprintf('%-14s %11.2f%% %11.2f%% %+11.2f%%\n', ...
         'Angular vel',       nRMSE_b_w,  nRMSE_a_w,  nRMSE_a_w  - nRMSE_b_w);
 fprintf('============================================================\n');
+fprintf('SINDy (trained on D2), same validation set:  position %.2f%%,  velocity %.2f%%\n', ...
+        100*sqrt(num_p_s/max(den_p_b,eps_d)), 100*sqrt(num_v_s/max(den_v_b,eps_d)));
 
 % ---------- inspect the new B columns (sanity / interpretation) ------------
 %   In the augmented model the last 3 input columns map (f_t * b3) into the
@@ -203,9 +220,9 @@ function x = broad_ic()
     x  = [p0; v0; q0; w0];
 end
 
-function [X, Xp, U] = gen_broad(stream, Ntraj, T, Sigma_u, params, ts, dt, steps, u_min, u_max)
+function [X, Xp, U, Xdot] = gen_broad(stream, Ntraj, T, Sigma_u, params, ts, dt, steps, u_min, u_max)
     RandStream.setGlobalStream(stream);
-    n = 13; Ns = round(T/ts); X = zeros(n, Ntraj*Ns); Xp = X; U = zeros(4, Ntraj*Ns); kk = 0;
+    n = 13; Ns = round(T/ts); X = zeros(n, Ntraj*Ns); Xp = X; Xdot = X; U = zeros(4, Ntraj*Ns); kk = 0;
     mg = params.m*params.g;
     for tr = 1:Ntraj
         x = broad_ic();
@@ -216,9 +233,16 @@ function [X, Xp, U] = gen_broad(stream, Ntraj, T, Sigma_u, params, ts, dt, steps
                 u = mvnrnd(zeros(4,1), Sigma_u).'; u(1) = u(1) + mg;
                 u = min(max(u, u_min), u_max);
             end
-            xk = x;
-            for j = 1:steps, x = rk4_step(x, u, params, dt); end
+            xk = x; xs = zeros(n, 2);
+            for j = 1:steps
+                x = rk4_step(x, u, params, dt);
+                if j <= 2, xs(:, j) = x; end
+            end
+            % derivative by the same second-order forward difference as
+            % run_comparison.m (quaternion sign-aligned with q_k first)
+            for j = 1:2, if dot(xs(7:10,j), xk(7:10)) < 0, xs(7:10,j) = -xs(7:10,j); end, end
             kk = kk+1; X(:,kk) = xk; Xp(:,kk) = x; U(:,kk) = u;
+            Xdot(:,kk) = (-3*xk + 4*xs(:,1) - xs(:,2)) / (2*dt);
         end
     end
 end

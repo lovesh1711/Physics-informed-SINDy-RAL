@@ -42,7 +42,7 @@ machine.
 | 3 | `make_paper_figures.m` | Figs. 3, 4 | `results/states.png`, `results/control_inputs.png` |
 | 4 | `run_figure8.m` | Sec. IV-D | figure-eight with SINDy, K-narrow (β_z < 0), K-broad (β_z > 0); `results/figure8_results.mat` |
 | 5 | `make_figure8_plots.m` | Fig. 5 | `results/figure8_traj.png`, `results/figure8_err.png` |
-| 6 | `run_bilinear_ablation.m` | Table IV | EDMD with and without the bilinear thrust atom, trained on D2 |
+| 6 | `run_bilinear_ablation.m` | Table IV | EDMD with and without the bilinear thrust atom, and SINDy, all trained on D2 and validated on the same set |
 
 Stages communicate only through the `.mat` files, so any stage can also be run
 on its own once its input `.mat` exists.

@@ -23,7 +23,8 @@
 %    [5] make_figure8_plots    Fig. 5a results/figure8_traj.png
 %                              Fig. 5b results/figure8_err.png
 %    [6] run_bilinear_ablation Table IV: EDMD with and without the bilinear
-%                              thrust atom, trained on D2
+%                              thrust atom, and SINDy, all trained on D2
+%                              and validated on the same set
 %
 %  Requirements: MATLAB (R2021b or newer)
 %                Optimization Toolbox                 (quadprog)
